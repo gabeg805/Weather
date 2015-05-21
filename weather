@@ -1,297 +1,299 @@
-#!/bin/bash
+#!/bin/env python2.7
+## **********************************************************************************
 ## 
-## CREATED BY: Gabriel Gonzalez (contact me at gabeg@bu.edu)
+## Name:    weather
+## Author:  Gabriel Gonzalez
+## Email:   gabeg@bu.edu
+## License: The MIT License (MIT)
 ## 
+## Syntax: weather 
 ## 
-## NAME:
-## 	
-## 	   weather
+## Description: Use the Weather Underground API to display useful weather information
+##              at the given zipcode. 
+##              
+## Notes: None.
 ## 
-## 
-## SYNTAX: 
-## 	  
-## 	   weather [ -h ] [ -p ZIPCODE HOUR(s) ]  
-## 
-## 
-## PURPOSE:
-## 	
-## 	   Displays weather of the location given. Is also capable of storing the weather
-##     data and plotting the temperature as a function of time for the default zipcode.
-## 
-## 
-## KEYWORDS:
-## 	
-##     ZIPCODE - zipcode of the location where the user wants weather information
-##     HOUR(s) - number of hours in the future to print future weather
-## 
-## 	   -h      - shows the help screen
-## 	   -p      - prints the weather information for the default zip code or 
-## 	             the user inputted zip code
-## 
-## 
-## FUNCTIONS:
-## 	
-##     help_screen     - Print the help screen
-## 
-##     is_connected    - Check if connected to the internet
-## 
-##     get_item        - Parse python script output to get specific weather data
-##     current_weather - Print current weather information
-##     future_weather  - Print future weather information
-##     misc_weather    - Print miscellaneous weather information
-##     weather_info    - Print all weather information
-## 
-##     main            - Display weather information
-## 
-## 
-## FILE STRUCTURE:
-##   
-##     * Print Help Message
-##     * Check Internet Connection
-##     * Get Python Script Output
-##     * Display Weather Information
-##     
-##     
-## MODIFICATION HISTORY:
-## 	
-## 	   gabeg Sep 19 2013 <> created
-## 
-##     gabeg Jul 11 2014 <> added more functions to increase readability 
-##
-##     gabeg Jul 23 2014 <> removed plotting capabilities 
-##
 ## **********************************************************************************
 
 
 
+## ##########################
+## ##### IMPORT MODULES #####
+## ##########################
+
+from sys import argv
+import urllib2 
+import json 
+
+
+
+## #######################################
+## ##### DISPLAY WEATHER INFORMATION #####
+## #######################################
+
+## Display weather information
+def main():
+    
+    validInputParameters()
+    
+    url         = get_website()
+    api         = urllib2.urlopen(url)
+    json_string = api.read()
+    parsed_json = json.loads(json_string)
+    
+    validZipcode(parsed_json)
+    
+    displayWeather(parsed_json)
+    
+    if ( isExtraInfo() ):
+        displayExtraInfo(parsed_json)
+    
+    displayLastUpdated(parsed_json)
+    
+    api.close()
+
+
+
+## ###############################
+## ##### PRINT PROGRAM USAGE #####
+## ###############################
+
+## Print program usage
+def usage():
+    print("Usage: %s [option <argument>]" % (argv[0]))
+    print("")
+    print("Commands:")
+    print("    zipcode       The 6 digit zipcode of a location")
+    print("")
+    print("Options:")
+    print("    -i, --info    Print extra weather information")
+    exit(0)
+
+
+
 ## ##############################
-## ##### PRINT HELP MESSAGE ##### 
+## ##### PRINT WEATHER DATA #####
 ## ##############################
 
-## Print the user help screen
-function help_screen {
+## Display weather information
+def displayWeather(parsed_json):
+    num      = get_hours()
+    city     = parsed_json['location']['city']
+    state    = parsed_json['location']['state']
+    zipcode  = parsed_json['location']['zip']
+    now_forecast = parsed_json['current_observation']['weather']
+    now_temp     = parsed_json['current_observation']['temp_f']
+    now_feels    = parsed_json['current_observation']['feelslike_f']
+    later_forecast = parsed_json['hourly_forecast'][num-1]['condition']
+    later_temp     = parsed_json['hourly_forecast'][num-1]['temp']['english']
+    later_feels    = parsed_json['hourly_forecast'][num-1]['feelslike']['english']
     
-    ## Preliminary Variables
-    local file="$0"
-    local first=(`sed 's/^$/  /; s/^/\`/' "$file" | grep -o -E '^\`..'`)
+    ## Weather information to print
+    location    = "%s, %s %s" % (city, state, zipcode)
+    weather     = "%s" % (now_forecast)
+    temperature = "%s/%s" % (now_temp, now_feels)
     
-    local j=0
+    ## Determine how much to pad the strings
+    i = len(weather)
+    j = len(temperature)
     
-    for i in "${first[@]}"; do 
-        if [[ "$i" == '`##' || "$i" == '`#!' ]]; then :; else break; fi
-        j=$[ $j + 1 ]
-    done
+    if ( i > j ):
+        pad = i+4
+    else:
+        pad = j+4
     
-    head -"$j" "$file" | less
-    exit
-}
-
-
-
-## #####################################
-## ##### CHECK INTERNET CONNECTION ##### 
-## #####################################
-
-## Check if connected to the internet
-function is_connected {
+    ## Print later weather information
+    if ( isLaterWeather() ):
+        weather     = "%s->    %s"    % (weather.ljust(pad),     later_forecast)
+        temperature = "%s->    %s/%s" % (temperature.ljust(pad), later_temp, later_feels)
     
-    ## Wireless check
-    local wirelessCheck=`ip link show wlp1s0 | cut -f2 -d'>' | grep -c 'UP'`
+    print("Location: %s" % (location))
+    print("")
+    print("Weather:  %s" % (weather))
+    print("Temp:     %s" % (temperature))
+    print("")
     
-    ## Ethernet check
-    local ethernetCheck=`ip link show enp3s0 | cut -f2 -d'>' | grep -c 'UP'`
+    # future_prob = parsed_json['hourly_forecast'][num-1]['pop']
+    # future_time = parsed_json['hourly_forecast'][num-1]['FCTTIME']['pretty']
+    # print future_time
+
+
+
+## Display extra weather information
+def displayExtraInfo(parsed_json):
+    precip    = parsed_json['current_observation']['precip_today_in']
+    humidity  = parsed_json['current_observation']['relative_humidity']
+    windSpeed = parsed_json['current_observation']['wind_mph']
+    windChill = parsed_json['current_observation']['windchill_f']
+    elevation = parsed_json['current_observation']['observation_location']['elevation']
     
+    risehr    = parsed_json['sun_phase']['sunrise']['hour'].zfill(2)
+    risemin   = parsed_json['sun_phase']['sunrise']['minute'].zfill(2)
+    sethr     = parsed_json['sun_phase']['sunset']['hour'].zfill(2)
+    setmin    = parsed_json['sun_phase']['sunset']['minute'].zfill(2)
     
-    ## Return boolean
-    if [ $wirelessCheck -eq 1 -o $ethernetCheck -eq 1 ]; then
-        echo true
-    else
-        echo false
-    fi
-}
+    print("Precip:   %s in" % (precip))
+    print("Humidity: %s" % (humidity))
+    print("Wind Speed: %s mph" % (windSpeed))
+    print("Wind Chill: %s in" % (windChill))
+    print("")
+    print("Sunrise: %s:%s" % (risehr, risemin))
+    print("Sunset:  %s:%s" % (sethr, setmin))
+    print("")
 
 
 
-## ####################################
-## ##### GET PYTHON SCRIPT OUTPUT #####
-## ####################################
+## Display last updated time
+def displayLastUpdated(parsed_json):
+    time = parsed_json['current_observation']['observation_time']
+    print("%s" % (time))
 
-## Get requested item from python weather script output
-function get_item {
+
+
+## ########################################
+## ##### RETRIEVE WEATHER INFORMATION #####
+## ########################################
+
+## Return Wunderground website address
+def get_website():
+    flag    = False
+    index   = getIndex("-z", "--zipcode", argv)
+    zipcode = argv[index+1]
     
-    ## Python weather output
-    local output=("$@")
+    if ( len(zipcode) == 5 ):
+        try:
+            zipcode = int(zipcode)
+        except:
+            flag = True
+    else:
+        flag = True
     
-    ## User search
-    local n=$[ ${#output[@]} - 1 ]
-    local search="${output[$n]}"
+    if ( flag or (index == -1) ):
+        print("%s: Invalid zipcode entered." % (argv[0]))
+        print("")
+        usage()
     
-    ## Return output
-    echo "${output[*]}" | grep "$search ~" | cut -f2 -d'~' | sed 's/^[ \t]*//'
-}
-
-
-
-## Print current weather conditions
-function current_weather {
+    web = "http://api.wunderground.com"
+    app = "/api/30e9ab88be150d93/alerts/astronomy/conditions/geolookup/hourly/q/"
+    ext = ".json"
+    url = "%s%s%s%s" % (web, app, zipcode, ext)
     
-    ## Print colors
-    local red=`tput setaf 1`
-    local gold=`tput setaf 3`
-    local reset=`tput sgr0`
+    return url
+
+
+
+## Return number of hours to print future weather
+def get_hours():
+    flag  = False
+    index = getIndex("-t", "--time", argv)
     
-    ## Current weather information
-    local all=("$@")
-    local city=`get_item "${all[@]}" 'City'`
-    local state=`get_item "${all[@]}" 'State'`
-    local temp=`get_item "${all[@]}" 'Temp' | head -1`
-    local feels=`get_item "${all[@]}" 'Feels' | head -1`
-    local weather=`get_item "${all[@]}" 'Weather' | head -1`
-    local updatetime=`get_item "${all[@]}" 'Time' | head -1 | sed 's/Last Updated on //; s/,/ -/'`
+    if ( index == -1 ):
+        return 0
     
-    ## Print message
-    echo -e "$red$city, $state$reset" \
-          "\n\n""$updatetime" \
-          "\n\t""$gold$weather" \
-          "\n\t""$temp$deg/$feels F$reset"
-}
-
-
-
-## Print future weather conditions
-function future_weather {
+    hours = argv[index+1]
     
-    ## Print colors
-    local gold=`tput setaf 3`
-    local reset=`tput sgr0`
+    try:
+        hours = int(hours)
+    except:
+        flag = True
     
-    ## Current weather information
-    local all=("$@")
-    local temp=(`get_item "${all[@]}" 'Future Temp'`)
-    local feels=(`get_item "${all[@]}" 'Future Feels'`)
-    local weather=(`get_item "${all[@]}" 'Future Weather'`)
-    local updatetime=(`get_item "${all[@]}" 'Future Time'`)
+    if (flag) or (hours < 0) or (hours > 36):
+        print("%s: Invalid number of hours '%s' entered." % (argv[0], hours))
+        print("")
+        usage()
     
-    ## Array number of elements
-    n=$[ ${#weather[@]} - 1 ]
+    return hours
+
+
+
+## #########################
+## ##### CHECK ZIPCODE #####
+## #########################
+
+## Check if input parameters are valid
+def validInputParameters():
+    n       = len(argv)
+    flag    = True
+    message = ""
     
-    ## Print message
-    for i in `seq 0 $n`; do
-        local wholepart=`echo "${updatetime[$i]}" | cut -f1 -d','`
-        local datepart=`echo "$wholepart" | sed 's/^.*.on //'`
-        local timepart=`echo "$wholepart" | sed "s/ on $datepart//"`
-        local newtime="$datepart - $timepart"
-        
-        echo -e "\n""$newtime" \
-              "\n\t""$gold${weather[$i]}" \
-              "\n\t""${temp[$i]}/${feels[$i]} F$reset"
-    done
-}
-
-
-
-## Print miscellanesou weather information
-function misc_weather {
+    if ( n == 1 ):
+        usage()
+    elif ( n == 2 ):
+        if ( ("-h" in argv) or ("--help" in argv) ):
+            usage()
+        message = "Too few arguments"
+    elif ( n == 3):
+        flag = False
+    elif ( n == 4 ):
+        if ( isExtraInfo() ):
+            flag = False
+        else:
+            message = "Invalid input parameters"
+    elif ( n == 5 ):
+        if ( isLaterWeather() ):
+            flag = False
+        else:
+            message = "Invalid input parameters"
+    elif ( n == 6 ):
+        if ( isExtraInfo() and isLaterWeather() ):
+            flag = False
+        else:
+            message = "Invalid input parameters"
+    else:
+        message = "Too many arguments"
     
-    ## Miscellaneous weather information
-    local all=("$@")
-    local precip=`get_item "${all[@]}" 'Precipitation'`
-    local humidity=`get_item "${all[@]}" 'Humidity'`
-    local windSpeed=`get_item "${all[@]}" 'Wind Speed'`
-    local windChill=`get_item "${all[@]}" 'Wind Chill'`
-    local elevation=`get_item "${all[@]}" 'Elevation'`
-    local solarrad=`get_item "${all[@]}" 'Solar Radiation'`
-}
+    if ( flag ):
+        print("%s: %s." % (argv[0], message))
+        print("")
+        usage()
 
 
 
-## Print weather information
-function weather_info {
-    
-    ## Change array delimeter
-    local IFS=$'\n'
-    
-    ## Execute python script
-    local pyapi="/mnt/Linux/Share/scripts/programs/weather/src/wuapi.py"
-    local all=(`python2.7 "$pyapi" "$1" "$2" | sed 's/^[ \t]*//'`)
-    
-    ## Print python script output 
-    echo "Using zipcode $1..."
-    
-    local checkWeather=`echo "${all[@]}" | grep -c 'ERROR'`
-    if [ $checkWeather -eq 1 ]; then
-        echo "${all[@]}"
-        exit
-    fi
-    
-    current_weather "${all[@]}"
-    future_weather "${all[@]}"
-}
+## Check if the input zipcode corresponds to an actual location
+def validZipcode(parsed_json):
+    try:
+        error = parsed_json['response']['error']['type']
+        if 'querynotfound' in error: 
+            print("%s: No cities match the zipcode '%s'" % (argv[0], argv[1]))
+            print("")
+            usage()
+            exit(1)
+    except:
+        pass
 
 
 
-## ###########################
-## ##### WEATHER OPTIONS #####
-## ###########################
-
-## Weather options
-function main {
-    
-    ## Default zipcode
-    local defzip="02215"
-    
-    ## Check user input
-    case "$1" in
-
-        ## Show the Help Screen
-        "-h") 
-	          help_screen
-	          exit
-	          ;;
-
-        ## Print the Weather Information
-        "-p") 
-
-              ## Check internet connection 
-              if `is_connected`; then
-                  :
-              else
-                  echo 'ERROR: No internet connection detected'
-                  exit
-              fi
-              
-              ## Check zipcode input
-	          if [[ "$2" == '' ]]; then 
-                  local zip="$defzip"
-              else 
-                  
-                  ## Define zipcode and future hours
-                  if [ ${#2} -lt 5 ]; then
-                      local zip="$defzip"
-                      local hours="$2"
-                  else
-                      local zip="$2"
-                      local hours="$3"
-                  fi
-              fi
-              
-              ## Print weather information 
-              weather_info "$zip" "$hours"
-              ;;
-        
-        ## Print Syntax Error
-        *) 
-            echo -e "ERROR: Incorrect syntax used. See the following for correct syntax""\n"
-            help_screen
-	        exit
-	        ;;
-    esac    
-}
+## Check if extra weather info should be printed
+def isExtraInfo():
+    if ( ("-i" in argv) or ("--info" in argv) ):
+        return True
+    else:
+        return False
 
 
 
-## ---------------------------------------
-## ----- DISPLAY WEATHER INFORMATION ----- 
-## ---------------------------------------
+## Check if later weather should be printed
+def isLaterWeather():
+    if ( ("-t" in argv) or ("--time" in argv) ):
+        return True
+    else:
+        return False
 
-main "$@"
+
+
+## Return the index at which the input occurs
+def getIndex(i, j, arr):
+    if ( i in arr ):
+        return (arr.index(i))
+    elif ( j in arr ):
+        return (arr.index(j))
+    else:
+        return -1
+
+
+
+## ---------------------------
+## Display Weather Information
+## ---------------------------
+
+main()
