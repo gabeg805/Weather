@@ -112,9 +112,8 @@ def displayWeather(parsed_json):
     print("Temp:     %s" % (temperature))
     print("")
     
-    # future_prob = parsed_json['hourly_forecast'][num-1]['pop']
-    # future_time = parsed_json['hourly_forecast'][num-1]['FCTTIME']['pretty']
-    # print future_time
+    future_prob = parsed_json['hourly_forecast'][num-1]['pop']
+    future_time = parsed_json['hourly_forecast'][num-1]['FCTTIME']
 
 
 
@@ -145,7 +144,16 @@ def displayExtraInfo(parsed_json):
 ## Display last updated time
 def displayLastUpdated(parsed_json):
     time = parsed_json['current_observation']['observation_time']
-    print("%s" % (time))
+    
+    
+    
+    if ( isLaterWeather() ):
+        num    = get_hours()
+        f_time = parsed_json['hourly_forecast'][num-1]['FCTTIME']['civil']
+        f_zone = time.split(' ')[-1]
+        print "%s  ->  %s %s" % (time, f_time, f_zone)
+    else:
+        print("%s" % (time))
 
 
 
