@@ -1,315 +1,258 @@
-#!/bin/env python2.7
-## **********************************************************************************
-## 
-## Name:    weather
-## Author:  Gabriel Gonzalez
-## Email:   gabeg@bu.edu
-## License: The MIT License (MIT)
-## 
-## Syntax: weather 
-## 
-## Description: Use the Weather Underground API to display useful weather information
-##              at the given zipcode. 
-##              
-## Notes: None.
-## 
-## **********************************************************************************
+#!/usr/bin/env python2.7
+# ******************************************************************************
+# 
+# Name:    weather
+# Author:  Gabriel Gonzalez
+# Email:   gabeg@bu.edu
+# License: The MIT License (MIT)
+# 
+# Syntax: weather
+# 
+# Description: Display weather information at a given zipcode, using the Weather
+#              Underground API.
+# 
+# Notes: None.
+# 
+# ******************************************************************************
 
-
-
-## ##########################
-## ##### IMPORT MODULES #####
-## ##########################
-
-from sys import argv
-import urllib2 
+# Imports
+import argparse
 import json 
+import os
+import sys
+import urllib2 
 
+# Globals
+PROG = os.path.basename(sys.argv[0])
 
+# Options
+ZIPCODE = '22202'
 
-## #######################################
-## ##### DISPLAY WEATHER INFORMATION #####
-## #######################################
+# Exit statuses
+EZIP  = 10
+EFTRT = 11
 
-## Display weather information
+# ******************************************************************************
+# Main
 def main():
-    
-    validInputParameters()
-    
-    url         = get_website()
-    api         = urllib2.urlopen(url)
-    json_string = api.read()
-    parsed_json = json.loads(json_string)
-    
-    validZipcode(parsed_json)
-    
-    displayWeather(parsed_json)
-    
-    if ( isExtraInfo() ):
-        displayExtraInfo(parsed_json)
-    
-    displayLastUpdated(parsed_json)
-    
-    api.close()
+    desc   = 'Display weather information at a given zipcode.'
+    parser = argparse.ArgumentParser(prog=PROG,
+                                     description=desc,
+                                     usage=usage(),
+                                     add_help=False)
 
+    # Parse options
+    parser.add_argument('-h', '--help',    action='help')
+    parser.add_argument('-p', '--print-weather', action='store_true', required=True)
+    parser.add_argument('-z', '--zipcode', action='store', default=ZIPCODE)
+    parser.add_argument('-f', '--future',  action='store')
+    parser.add_argument('-e', '--extra',   action='store_true')
+    args = parser.parse_args()
 
+    # Check inputs
+    if (not is_zipcode(args.zipcode)):
+        print "%s: Invalid zipcode entered '%s'." % (PROG, args.zipcode)
+        exit(EZIP)
+    if ((args.future is not None) and (not is_future_time(args.future))):
+        print "%s: Invalid future time entered '%s'." % (PROG, args.future)
+        exit(EFTRT)
 
-## ###############################
-## ##### PRINT PROGRAM USAGE #####
-## ###############################
+    # Download weather information
+    website = get_weather_website(args.zipcode)
+    socket  = urllib2.urlopen(website)
+    jstring = socket.read()
+    pjson   = json.loads(jstring)
+    print_weather(args, pjson)
+    socket.close()
 
-## Print program usage
+# ******************************************************************************
+# Print program usage
 def usage():
-    print("Usage: %s [options] <argument>" % (argv[0].split('/')[-1]))
-    print("")
-    print("Options:")
-    print("    -h, --help                 Print the program usage message")
-    print("    -z, --zipcode <zipcode>    Print weather information")
-    print("    -f, --future <time>        Display future weather information")
-    print("    -i, --info                 Print extra weather information")
-    print("")
-    print("Arguments:")
-    print("    <zipcode>                  A 5 digit zipcode")
-    print("    <time>                     Number of hours")
+    string  = "Usage: %s [options] <argument>\n" % (PROG)
+    string += "\n"
+    string += "Options:\n"
+    string += "    -h, --help                 Print the program usage message\n"
+    string += "    -z, --zipcode <zipcode>    Print weather information\n"
+    string += "    -f, --future <time>        Display future weather information\n"
+    string += "    -e, --extra                Print extra weather information\n"
+    string += "\n"
+    string += "Arguments:\n"
+    string += "    <zipcode>                  A 5 digit zipcode\n"
+    string += "    <time>                     Number of hours\n"
+    return string
 
+# ******************************************************************************
+# Print all weather information
+def print_weather(args, pjson):
+    # Check API query
+    if (not is_api_query(pjson)):
+        print "%s: No city found matching zipcode '%s'." % (PROG, args.zipcode)
+        exit(EZIP)
 
+    # Print weather
+    print_weather_info(pjson)
+    print_last_updated_time(pjson)
+    print_future_weather_info(pjson, args.future)
+    print_extra_weather_info(pjson, args.extra)
 
-## ##############################
-## ##### PRINT WEATHER DATA #####
-## ##############################
+    return 0
 
-## Display weather information
-def displayWeather(parsed_json):
-    num      = get_hours()
-    city     = parsed_json['location']['city']
-    state    = parsed_json['location']['state']
-    zipcode  = parsed_json['location']['zip']
-    now_forecast = parsed_json['current_observation']['weather']
-    now_temp     = parsed_json['current_observation']['temp_f']
-    now_feels    = parsed_json['current_observation']['feelslike_f']
-    later_forecast = parsed_json['hourly_forecast'][num-1]['condition']
-    later_temp     = parsed_json['hourly_forecast'][num-1]['temp']['english']
-    later_feels    = parsed_json['hourly_forecast'][num-1]['feelslike']['english']
-    
-    ## Weather information to print
-    location    = "%s, %s %s" % (city, state, zipcode)
-    weather     = "%s" % (now_forecast)
-    temperature = "%s/%s" % (now_temp, now_feels)
-    
-    ## Determine how much to pad the strings
-    i = len(weather)
-    j = len(temperature)
-    
-    if ( i > j ):
-        pad = i+4
-    else:
-        pad = j+4
-    
-    ## Print later weather information
-    if ( isLaterWeather() ):
-        weather     = "%s->    %s"    % (weather.ljust(pad),     later_forecast)
-        temperature = "%s->    %s/%s" % (temperature.ljust(pad), later_temp, later_feels)
-    
-    print("Location: %s" % (location))
-    print("")
-    print("Weather:  %s" % (weather))
-    print("Temp:     %s" % (temperature))
-    print("")
-    
-    future_prob = parsed_json['hourly_forecast'][num-1]['pop']
-    future_time = parsed_json['hourly_forecast'][num-1]['FCTTIME']
+# ******************************************************************************
+# Print weather information
+def print_weather_info(pjson):
+    city     = pjson['location']['city']
+    state    = pjson['location']['state']
+    zipcode  = pjson['location']['zip']
+    forecast = pjson['current_observation']['weather']
+    temp     = pjson['current_observation']['temp_f']
+    feels    = pjson['current_observation']['feelslike_f']
 
+    # Print info
+    print '%s, %s %s' % (city, state, zipcode)
+    print
+    print '%s' % (forecast)
+    print '%s' % (temp), u'\u00b0F', '/', '%s' % (feels), u'\u00b0F'
 
+    return 0
 
-## Display extra weather information
-def displayExtraInfo(parsed_json):
-    precip    = parsed_json['current_observation']['precip_today_in']
-    humidity  = parsed_json['current_observation']['relative_humidity']
-    windSpeed = parsed_json['current_observation']['wind_mph']
-    windChill = parsed_json['current_observation']['windchill_f']
-    elevation = parsed_json['current_observation']['observation_location']['elevation']
-    
-    risehr    = parsed_json['sun_phase']['sunrise']['hour'].zfill(2)
-    risemin   = parsed_json['sun_phase']['sunrise']['minute'].zfill(2)
-    sethr     = parsed_json['sun_phase']['sunset']['hour'].zfill(2)
-    setmin    = parsed_json['sun_phase']['sunset']['minute'].zfill(2)
-    
-    print("Precip:   %s in" % (precip))
-    print("Humidity: %s" % (humidity))
-    print("Wind Speed: %s mph" % (windSpeed))
-    print("Wind Chill: %s in" % (windChill))
-    print("")
-    print("Sunrise: %s:%s" % (risehr, risemin))
-    print("Sunset:  %s:%s" % (sethr, setmin))
-    print("")
+# ******************************************************************************
+# Print future weather information
+def print_future_weather_info(pjson, future):
+    if (future is None):
+        return 1
 
+    print
+    print '---------------------'
+    print '   Future Forecast   '
+    print '---------------------'
 
+    # Loop through number of hours in future
+    hours    = get_future_hours(future)
+    for h in range(0, hours):
+        forecast = pjson['hourly_forecast'][h]['condition']
+        temp     = pjson['hourly_forecast'][h]['temp']['english']
+        feels    = pjson['hourly_forecast'][h]['feelslike']['english']
+        ftime = pjson['hourly_forecast'][h]['FCTTIME']['pretty']
 
-## Display last updated time
-def displayLastUpdated(parsed_json):
-    time = parsed_json['current_observation']['observation_time']
-    
-    
-    
-    if ( isLaterWeather() ):
-        num    = get_hours()
-        f_time = parsed_json['hourly_forecast'][num-1]['FCTTIME']['civil']
-        f_zone = time.split(' ')[-1]
-        print "%s  ->  %s %s" % (time, f_time, f_zone)
-    else:
-        print("%s" % (time))
+        # Print future info
+        print
+        print '%s' % (ftime)
+        print '%s' % (forecast)
+        print '%s' % (temp), u'\u00b0F', '/', '%s' % (feels), u'\u00b0F'
 
+    return 0
 
+# ******************************************************************************
+# Print extra weather information
+def print_extra_weather_info(pjson, extra):
+    if (not is_extra_info(extra)):
+        return 1
 
-## ########################################
-## ##### RETRIEVE WEATHER INFORMATION #####
-## ########################################
+    precip    = pjson['current_observation']['precip_today_in']
+    humidity  = pjson['current_observation']['relative_humidity']
+    windspeed = pjson['current_observation']['wind_mph']
+    windchill = pjson['current_observation']['windchill_f']
+    elevation = pjson['current_observation']['observation_location']['elevation']
+    risehr    = pjson['sun_phase']['sunrise']['hour'].rjust(2)
+    risemin   = pjson['sun_phase']['sunrise']['minute'].zfill(2)
+    sethr     = pjson['sun_phase']['sunset']['hour']
+    setmin    = pjson['sun_phase']['sunset']['minute'].zfill(2)
+    if (int(sethr) > 12):
+        sethr = ' '+str(int(sethr) - 12)
 
-## Return Wunderground website address
-def get_website():
-    flag    = False
-    index   = getIndex("-z", "--zipcode", argv)
-    zipcode = argv[index+1]
-    
-    if ( len(zipcode) == 5 ):
-        try:
-            zipcode = int(zipcode)
-        except:
-            flag = True
-    else:
-        flag = True
-    
-    if ( flag or (index == -1) ):
-        print("%s: Invalid zipcode entered." % (argv[0].split('/')[-1]))
-        print("")
-        usage()
-        exit(1)
-    
+    print
+    print '-----------------------'
+    print '   Extra Information   '
+    print '-----------------------'
+    print
+    print '%-12s: %s:%s AM' % ('Sunrise', risehr, risemin)
+    print '%-12s: %s:%s PM' % ('Sunset', sethr, setmin)
+    print
+    print '%-12s: %s in' % ('Precip.', precip)
+    print '%-12s: %s mph' % ('Wind Speed', windspeed)
+    print '%-12s: %s' % ('Wind Chill', windchill), u'\u00b0F'
+    print '%-12s: %s' % ('Humidity', humidity)
+
+    return 0
+
+# ******************************************************************************
+# Print last updated time
+def print_last_updated_time(pjson):
+    print
+    print '%s' % pjson['current_observation']['observation_time']
+    return 0
+
+# ******************************************************************************
+# Return Weather Underground website URL
+def get_weather_website(zipcode):
     web = "http://api.wunderground.com"
     app = "/api/30e9ab88be150d93/alerts/astronomy/conditions/geolookup/hourly/q/"
     ext = ".json"
     url = "%s%s%s%s" % (web, app, zipcode, ext)
-    
     return url
 
-
-
-## Return number of hours to print future weather
-def get_hours():
-    flag  = False
-    index = getIndex("-t", "--time", argv)
-    
-    if ( index == -1 ):
-        return 0
-    
-    hours = argv[index+1]
-    
-    try:
-        hours = int(hours)
-    except:
-        flag = True
-    
-    if (flag) or (hours < 0) or (hours > 36):
-        print("%s: Invalid number of hours '%s' entered." % (argv[0], hours))
-        print("")
-        usage()
-        exit(1)
-    
-    return hours
-
-
-
-## #########################
-## ##### CHECK ZIPCODE #####
-## #########################
-
-## Check if input parameters are valid
-def validInputParameters():
-    n       = len(argv)
-    flag    = True
-    message = ""
-    
-    if ( n == 1 ):
-        usage()
-        exit(0)
-    elif ( n == 2 ):
-        if ( ("-h" in argv) or ("--help" in argv) ):
-            usage()
-            exit(0)
-        message = "Too few arguments"
-    elif ( n == 3):
-        flag = False
-    elif ( n == 4 ):
-        if ( isExtraInfo() ):
-            flag = False
-        else:
-            message = "Invalid input parameters"
-    elif ( n == 5 ):
-        if ( isLaterWeather() ):
-            flag = False
-        else:
-            message = "Invalid input parameters"
-    elif ( n == 6 ):
-        if ( isExtraInfo() and isLaterWeather() ):
-            flag = False
-        else:
-            message = "Invalid input parameters"
-    else:
-        message = "Too many arguments"
-    
-    if ( flag ):
-        print("%s: %s." % (argv[0].split('/')[-1], message))
-        print("")
-        usage()
-        exit(1)
-
-
-
-## Check if the input zipcode corresponds to an actual location
-def validZipcode(parsed_json):
-    try:
-        error = parsed_json['response']['error']['type']
-        if 'querynotfound' in error: 
-            print("%s: No cities match the zipcode '%s'" % (argv[0].split('/')[-1], argv[1]))
-            print("")
-            usage()
-            exit(1)
-    except:
-        pass
-
-
-
-## Check if extra weather info should be printed
-def isExtraInfo():
-    if ( ("-i" in argv) or ("--info" in argv) ):
-        return True
-    else:
-        return False
-
-
-
-## Check if later weather should be printed
-def isLaterWeather():
-    if ( ("-f" in argv) or ("--future" in argv) ):
-        return True
-    else:
-        return False
-
-
-
-## Return the index at which the input occurs
-def getIndex(i, j, arr):
-    if ( i in arr ):
-        return (arr.index(i))
-    elif ( j in arr ):
-        return (arr.index(j))
+# ******************************************************************************
+# Return future time in hours
+def get_future_hours(future):
+    unit  = future[-1]
+    scale = 1
+    if (unit == 'h'):
+        scale = 1
+    elif (unit == 'd'):
+        scale = 24
     else:
         return -1
 
+    return int(future[:-1])*scale
 
+# ******************************************************************************
+# Check if any errors occurred with querying for data
+def is_api_query(pjson):
+    try:
+        error = pjson['response']['error']['type']
+        if ('querynotfound' in error): 
+            return False
+    except:
+        pass
+    return True
 
-## ---------------------------
-## Display Weather Information
-## ---------------------------
+# ******************************************************************************
+# Check if valid zipcode
+def is_zipcode(zipcode):
+    try:
+        tmp = int(zipcode)
+    except ValueError:
+        return False
 
+    if (len(zipcode) != 5):
+        return False
+
+    return True
+
+# ******************************************************************************
+# Check if valid future time
+def is_future_time(ftime):
+    if (ftime is None):
+        return False
+
+    unit = ftime[-1]
+    if ((unit == 'h') or (unit == 'd')):
+        pass
+    else:
+        return False
+
+    try:
+        tmp = int(ftime[:-1])
+    except ValueError:
+        return False
+
+    return True
+
+# ******************************************************************************
+# Check if extra info should be printed
+def is_extra_info(extra):
+    return extra
+
+# ******************************************************************************
+# Run script
 main()
